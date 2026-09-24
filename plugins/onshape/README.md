@@ -119,4 +119,4 @@ Fin technique by Slant3D; engine, spec and constants from this repo by Matthew T
 FeatureScript port by Chris Lee, Southeast Expedition Medical, LLC. MIT License, same as the
 rest of the repo.
 
-Claude Code (Opus 5.5) used to simplify the porting proccess and write much of the featurescript code.
+Claude Code (Opus 5.5) used to simplify the porting process and write much of the FeatureScript code.

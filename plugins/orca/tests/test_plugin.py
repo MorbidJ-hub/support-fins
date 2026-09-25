@@ -217,3 +217,23 @@ def test_plugin_registers_its_capability():
     ORCA.registered.clear()
     SF.SupportFinsPlugin().register_capabilities()
     assert ORCA.registered == [SF.SupportFinsSlicing]
+
+
+def test_mirrored_part_gets_the_same_fins_as_its_twin():
+    """Orca's mirror tool leaves a matrix with det < 0, which flips every triangle's
+    winding. The engine finds overhangs from face normals, so the plugin must put the
+    winding back: a mirrored part gets the same fins as the same shape modelled
+    mirrored. (Before the fix: lbracket at 35 deg dropped from 4 fins to 1.)"""
+    part = trimesh.load(MODELS / "lbracket.stl")
+    mirror = np.diag([-1.0, 1.0, 1.0, 1.0])
+    po = fake_orca.FakePrintObject(part, rot_x(35) @ mirror)
+    soup = SF.posed_part_soup(po)
+    signed = np.einsum("ij,ij->i", soup[:, 0], np.cross(soup[:, 1], soup[:, 2])).sum() / 6
+    assert signed > 0, "mirrored part came through inside-out"
+    twin = part.copy()
+    twin.apply_transform(mirror)                      # trimesh repairs the winding itself
+    ref = fake_orca.FakePrintObject(twin, rot_x(35))
+    _, s_mir = SF.compute_fins(soup, 0.2, dict(SF._DEFAULTS))
+    _, s_ref = SF.compute_fins(SF.posed_part_soup(ref), 0.2, dict(SF._DEFAULTS))
+    assert s_ref["braces"] >= 1
+    assert (s_mir["braces"], s_mir["tines"]) == (s_ref["braces"], s_ref["tines"])

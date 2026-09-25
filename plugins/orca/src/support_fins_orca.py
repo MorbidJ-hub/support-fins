@@ -73,16 +73,35 @@ _engine = None
 
 
 def _engine_ctx():
-    """One V8 context per process, created on first use (loading it costs ~3 ms)."""
+    """One V8 context per process (loading the engine costs ~3 ms).
+
+    Started at module load (see the bottom of this section), because Orca's audit
+    hook is off while plugins load but gates every file open during slicing, and V8
+    reads its ICU data file when it starts. On macOS V8 runs --jitless: mini-racer's
+    JIT hits SIGTRAP there, and a hardened app may refuse JIT memory anyway. Both
+    are lessons from gittrahan's feat/orca-plugin branch.
+    """
     global _engine
     if _engine is None:
-        from py_mini_racer import MiniRacer
+        import sys
+        from py_mini_racer import MiniRacer, init_mini_racer
         if ENGINE_JS.startswith("__FINS_ENGINE"):
             raise RuntimeError("fin engine bundle missing -- run plugins/orca/build.py")
+        flags = ["--single-threaded"]
+        if sys.platform == "darwin":
+            flags.append("--jitless")
+        init_mini_racer(flags=flags, ignore_duplicate_init=True)
         ctx = MiniRacer()
         ctx.eval(ENGINE_JS)
         _engine = ctx
     return _engine
+
+
+if not ENGINE_JS.startswith("__FINS_ENGINE"):
+    try:
+        _engine_ctx()
+    except Exception:  # pragma: no cover - retried (and reported) on first slice
+        _engine = None
 
 
 def compute_fins(soup, layer_height, cfg):
@@ -338,7 +357,12 @@ def posed_part_soup(print_object):
             continue
         M = trafo @ np.asarray(vol.matrix(), dtype=np.float64)
         Vh = V @ M[:3, :3].T + M[:3, 3]
-        chunks.append(Vh[T])
+        tris = Vh[T]
+        if np.linalg.det(M[:3, :3]) < 0:
+            # A mirrored part flips every triangle's winding; the engine reads
+            # overhangs from face normals, so restore outward-facing order.
+            tris = tris[:, [0, 2, 1], :]
+        chunks.append(tris)
     if not chunks:
         return np.empty((0, 3, 3))
     return np.concatenate(chunks, axis=0)

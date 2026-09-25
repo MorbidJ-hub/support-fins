@@ -43,6 +43,7 @@ LIMITS (spike)
   * The slicing-pipeline API is marked research/experimental by Orca.
   * One fin set per print object (all instances of an object share it).
 """
+import atexit
 import base64
 import json
 import os
@@ -93,6 +94,9 @@ def _engine_ctx():
         init_mini_racer(flags=flags, ignore_duplicate_init=True)
         ctx = MiniRacer()
         ctx.eval(ENGINE_JS)
+        # mini-racer never tears V8 down by itself: without an explicit close(), the
+        # interpreter hangs forever at exit (seen in pytest on macOS, any V8 flags).
+        atexit.register(ctx.close)
         _engine = ctx
     return _engine
 

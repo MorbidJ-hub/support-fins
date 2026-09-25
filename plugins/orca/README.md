@@ -30,7 +30,7 @@ so the per-object support toggle picks fins vs Orca supports.
 ```
 python3 plugins/orca/build.py                   # -> build/support_fins_orca.py (one file, ~100 KB)
 deno test --allow-read tests/ plugins/orca/tests/
-python3 -m pytest -q plugins/orca/tests/        # needs numpy, trimesh, scipy, shapely, rtree, mini-racer
+python3 -m pytest -q plugins/orca/tests/        # needs numpy, trimesh, scipy, shapely, rtree, networkx, mini-racer
 ```
 
 Install and turn on (OrcaSlicer 2.5 nightly):

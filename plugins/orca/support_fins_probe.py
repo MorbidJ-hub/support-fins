@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["numpy"]   # Orca does not bundle numpy; its uv installs it from here
 #
 # [tool.orcaslicer.plugin]
 # name = "Support Fins — Probe"
@@ -135,8 +135,10 @@ class SupportFinsProbe(orca.script.ScriptPluginCapabilityBase):
         try:
             model = orca.host.model()
         except Exception as e:
+            # failure() takes an orca.PluginResult, not a string -- a string raises TypeError
             return orca.ExecutionResult.failure(
-                "host-error", f"orca.host.model() raised {type(e).__name__}: {e}")
+                orca.PluginResult.RecoverableError,
+                f"orca.host.model() raised {type(e).__name__}: {e}")
 
         objs = list(model.objects())
         if not objs:

@@ -16,3 +16,6 @@ plugins/orca/build/
 plugins/fusion/SupportFins/settings.json
 plugins/fusion/SupportFins/.env
 plugins/fusion/SupportFins/.vscode/
+plugins/fusion/build/
+plugins/fusion/SupportFins/engine/
+plugins/fusion/SupportFins/lib/

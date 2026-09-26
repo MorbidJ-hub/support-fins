@@ -1,14 +1,40 @@
 # Support Fins — Autodesk Fusion add-in
 
 A Fusion add-in that puts print supports **in the model** instead of the slicer. It's a
-companion to [printfins.com](https://printfins.com), by Mitch Milam.
-Phase 1 is **sway braces**. These are tapered buttress ribs that stand beside the tall sides of a
-part, tied to it with one-layer tines, so a tall, slender part doesn't drift or wobble as it prints.
+companion to [printfins.com](https://printfins.com). Sway braces by Mitch Milam; support fins by
+MorbidJ-hub. Two commands under **Solid › Create**:
 
-The brace maths is a port of the website's [`web/sway.js`](../../web/sway.js); the numbers and
-reasoning are in [`docs/FIN-SPEC.md`](../../docs/FIN-SPEC.md), "Sway braces (tall parts)".
+- **Insert Support Fins**: the website's breakaway fins under the part's overhangs
+  (upside-down-T walls gripped by a comb of one-layer tines) and a bed pad where the part
+  barely touches the plate. The geometry comes from **the website's engine itself**
+  (`web/*.js`, unmodified), run in an embedded V8 through
+  [`plugins/shared/`](../shared/README.md), the same way the Orca plugin runs it. Fusion places
+  the fins the site would place, and a fix on the site reaches Fusion with the next build.
+- **Insert Sway Brace**: tapered buttress ribs that stand beside the tall sides of a part, tied to
+  it with one-layer tines, so a tall, slender part doesn't drift or wobble as it prints. The brace
+  maths is a port of the website's [`web/sway.js`](../../web/sway.js); the numbers and reasoning
+  are in [`docs/FIN-SPEC.md`](../../docs/FIN-SPEC.md), "Sway braces (tall parts)".
 
 ## Install
+
+**From a build (easiest).** Download `SupportFins-<platform>.zip` (`win_amd64`,
+`macosx_arm64` for Apple silicon, `macosx_x86_64` for Intel Macs) from the
+[`plugins-latest`](https://github.com/gittrahan/support-fins/releases/tag/plugins-latest)
+release, or build it (`python3 plugins/fusion/build.py`). Unzip it so the `SupportFins`
+folder sits in Fusion's add-ins folder:
+
+- Windows: `%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\`
+- macOS: `~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/`
+
+Then go to step 2 below. The zip carries mini-racer (the V8 runtime Insert Support Fins needs)
+for that platform, because Fusion's Python has no pip.
+
+**From the repo (to develop).** Build the engine bundle and vendor the runtime into the source
+folder first, then link it:
+
+```sh
+python3 plugins/fusion/build.py --no-vendor --here win_amd64   # or macosx_arm64 / macosx_x86_64
+```
 
 1. Link (or copy) the `SupportFins` folder into Fusion's add-ins folder:
 
@@ -25,9 +51,36 @@ reasoning are in [`docs/FIN-SPEC.md`](../../docs/FIN-SPEC.md), "Sway braces (tal
    then **+** next to *My Add-Ins*.
 2. In **Scripts and Add-Ins**, select **SupportFins** and click **Run**. Tick *Run on Startup* to
    load it every time Fusion starts.
-3. The command appears under **Solid › Create › Insert Sway Brace**.
+3. The commands appear under **Solid › Create**: **Insert Support Fins** and **Insert Sway Brace**.
 
-## Use
+## Insert Support Fins
+
+1. **Print bed**: the same choices as Insert Sway Brace below (the ground origin plane to start
+   with, a face the part stands on, a plane on the bed, or the part itself). Pose the part the
+   way it will print first: the fins are fitted to the pose you give it, just as the website
+   fits them to the rotation you pick there.
+2. **Part**: defaults to the bed face's body, or to the design's only visible body. Solid bodies
+   are meshed at 0.05 mm; mesh bodies (imported STLs) are used as they are.
+3. **Settings** (remembered between sessions, website defaults to start):
+   - Fin style: *Auto* (props for the overhangs, plus bracing fins if the part would topple),
+     *Props only*, or *Stabilize*
+   - Layer height (**must match your slicer**; shared with Insert Sway Brace)
+   - Tines on/off, Tine density %
+   - Wide-face coverage % (how densely a broad overhang is lined)
+   - Bed pad on/off
+4. The readout gives the count of fins and tines, whether there's a bed pad, and a rough weight.
+   The preview shows the fins live. Click **Insert** to keep them.
+
+The fins go into the **Supports** component (inside a *Support fins* base feature in a
+parametric design) as **mesh bodies**: one per fin (its wall and the tines that ride on it) and
+one per bed pad, named *Support fin N* and *Bed pad N*. Delete any fin you don't want. Your own
+bodies are never changed. Export the part and the Supports bodies together (STL/3MF); the tines
+overlap the part by the bite on purpose, and the slicer merges them.
+
+Run Insert Support Fins before Insert Sway Brace on the same part: the Python brace port doesn't
+yet steer clear of fin walls (see *Status*).
+
+## Insert Sway Brace
 
 1. **Print bed**: this starts on the ground origin plane (XY, or XZ in a Y-up design), which is
    right for a part modelled standing on the origin. To stand it another way, pick instead:
@@ -72,9 +125,15 @@ Export the part and the Supports bodies together (STL/3MF) for slicing.
 ## Develop
 
 ```
+build.py                    engine bundle + mini-racer vendoring + one zip per platform
 SupportFins/                the add-in (this folder goes in Fusion's AddIns)
-  SupportFins.py            entry point: run/stop
-  sway_command.py           the dialog, readout and preview
+  SupportFins.py            entry point: run/stop, starts both commands
+  fins_command.py           Insert Support Fins: dialog, readout and preview
+  engine_host.py            runs the website's engine in V8 (mini-racer); no adsk imports
+  fins_core/shells.py       engine soup -> closed shells -> one welded mesh per fin / pad
+  engine/fins_engine.js     the engine bundle (built, not committed)
+  lib/<platform>/           vendored mini-racer (built, not committed)
+  sway_command.py           Insert Sway Brace: the dialog, readout and preview
   fusion_bridge.py          print frame (cm ↔ mm, bed → up), meshing, BRep bodies
   settings_store.py         settings.json next to the add-in
   sway_core/                pure Python, no adsk imports, millimetres
@@ -82,11 +141,16 @@ SupportFins/                the add-in (this folder goes in Fusion's AddIns)
     patches.py              wall patches (port of web/planes.js)
     geometry.py             clipping, mesh containment, prisms
 tests/test_sway.py          unit tests (port of tests/sway.test.js, plus more)
+tests/test_fins.py          engine host, mesh reshaping, and the command run on fake_adsk
+tests/fake_adsk.py          just enough of Fusion's API to run the fins command offline
 ```
 
-Run the tests from the repo root (plain Python, no Fusion needed):
+Run the tests from the repo root (plain Python, no Fusion needed). The fins tests need the
+engine bundle and mini-racer, and skip (saying why) without them:
 
 ```sh
+pip install mini-racer==0.14.1
+python3 plugins/fusion/build.py --no-vendor
 python3 -m unittest discover -s plugins/fusion/tests -v
 ```
 
@@ -95,6 +159,20 @@ together. Bump the manifest version with each Fusion-side change: the dialog sho
 you can tell which build Fusion loaded (Stop/Run reloads the add-in's modules).
 
 ## Status
+
+### Insert Support Fins
+
+- Offline: the engine host returns the website's fins in the part's own frame, identical
+  wherever the part sits on the plate; every fin and pad body is a closed mesh; through the fake
+  Fusion API a tilted mesh part gets named, tagged fins in Supports (base feature in parametric,
+  none in direct), Y-up "stand as modelled" works, and a part through the bed is refused.
+- The vendored runtime loads from `lib/<platform>/` in a Python with no mini-racer installed.
+- **Not yet run inside real Fusion.** To confirm there: mini-racer loading in Fusion's Python
+  (Windows first, then macOS with `--jitless`), `MeshBodies.addByTriangleMeshData` inside a base
+  feature, preview speed on big parts (the bed pad can be ~30k triangles), and a print of the
+  exported part + fins.
+
+### Insert Sway Brace
 
 - The pure-Python core matches `web/sway.js` brace-for-brace on plain test parts.
 - Run in Fusion on Windows (Auto and picked faces, mesh bodies, Part Design documents).

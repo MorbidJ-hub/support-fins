@@ -18,6 +18,7 @@ from .sway_core.patches import grow_wall_patches, patch_at_point
 MM_PER_CM = 10.0
 ATTR_GROUP = 'SupportFins'
 ATTR_SWAY = 'sway'
+ATTR_FIN = 'fin'
 SUPPORTS_NAME = 'Supports'
 MESH_TOLERANCE_CM = 0.005   # 0.05 mm chord error, well under the tine bite
 
@@ -61,12 +62,19 @@ def only_body(design):
     None. Bodies in sub-components come back as assembly-context proxies."""
     root = design.rootComponent
     found = [b for coll in (root.bRepBodies, root.meshBodies) for b in coll
-             if b.isVisible and not is_brace(b)]
+             if b.isVisible and not is_support(b)]
     for occ in root.allOccurrences:
         if occ.component.name == SUPPORTS_NAME or not occ.isVisible:
             continue
-        for coll in (occ.bRepBodies, getattr(occ, 'meshBodies', None) or []):
-            found += [b for b in coll if b.isVisible]
+        found += [b for b in occ.bRepBodies if b.isVisible]
+        # an Occurrence has no meshBodies: take the component's, in this occurrence's context
+        for m in occ.component.meshBodies:
+            try:
+                p = m.createForAssemblyContext(occ)
+            except Exception:
+                continue
+            if p is not None and p.isVisible and not is_support(p):
+                found.append(p)
     return found[0] if len(found) == 1 else None
 
 
@@ -260,6 +268,19 @@ def is_brace(body):
         return False
 
 
+def is_fin(body):
+    """Was this (mesh) body made by Insert Support Fins?"""
+    try:
+        return body.attributes.itemByName(ATTR_GROUP, ATTR_FIN) is not None
+    except Exception:
+        return False
+
+
+def is_support(body):
+    """Any body this add-in made: a sway brace or a support fin / bed pad."""
+    return is_brace(body) or is_fin(body)
+
+
 def _identity():
     return adsk.core.Matrix3D.create()
 
@@ -275,7 +296,7 @@ def supports_target(design, create):
     for occ in root.occurrences:
         if occ.component.name == SUPPORTS_NAME:
             return occ.component, occ.transform2
-    if any(is_brace(b) for b in root.bRepBodies):
+    if any(is_support(b) for coll in (root.bRepBodies, root.meshBodies) for b in coll):
         return root, _identity()
     if not create:
         return None, None
@@ -363,4 +384,114 @@ def add_braces(design, ribs, frame):
     for i, (body, rib) in enumerate(zip(added, ribs)):
         body.name = 'Sway brace %d' % (n0 + i + 1)
         body.attributes.add(ATTR_GROUP, ATTR_SWAY, _rib_meta(rib, frame))
+    return added
+
+
+# --------------------------------------------------------------------------
+# Support fins (Insert Support Fins): the engine's mesh, as mesh bodies
+# --------------------------------------------------------------------------
+
+def body_soup(body, frame):
+    """The body as a flat triangle soup in print space (mm, z up, wound outward):
+    what the fin engine takes."""
+    return [c for tri in _body_triangles(body, frame) for p in tri for c in p]
+
+
+def existing_fin_count(design):
+    """How many fin / pad bodies earlier runs left in the design."""
+    comp, _ = supports_target(design, create=False)
+    if comp is None:
+        return 0
+    return sum(1 for b in comp.meshBodies if is_fin(b))
+
+
+def _group_name(kind, n):
+    return ('Support fin %d' if kind == 'fin' else 'Bed pad %d') % n
+
+
+def _warn_if_elsewhere(bodies, comp):
+    """An old Fusion report has sub-component mesh bodies landing in the root
+    component instead. Say so in the Text Commands log rather than fail."""
+    try:
+        stray = [b for b in bodies if b.parentComponent != comp]
+        if stray:
+            adsk.core.Application.get().log(
+                'Support Fins: %d fin bod%s landed in “%s” instead of “%s”.' % (
+                    len(stray), 'y' if len(stray) == 1 else 'ies',
+                    stray[0].parentComponent.name, comp.name))
+    except Exception:
+        pass
+
+
+def add_fin_bodies(design, groups, frame, meta=None):
+    """Put the engine's fins into the 'Supports' component (or, in a Part Design
+    document, the root component) as one mesh body per fin and per bed pad,
+    inside a base feature in a parametric design. The user's bodies are never
+    touched. Returns the new bodies."""
+    if not groups:
+        return []
+    comp, xf = supports_target(design, create=True)
+    inv = xf.copy()
+    inv.invert()
+    m = inv.asArray()
+
+    def local(coords):
+        out = []
+        for i in range(0, len(coords), 3):
+            x, y, z = frame.to_world_xyz((coords[i], coords[i + 1], coords[i + 2]))
+            out += (m[0] * x + m[1] * y + m[2] * z + m[3],
+                    m[4] * x + m[5] * y + m[6] * z + m[7],
+                    m[8] * x + m[9] * y + m[10] * z + m[11])
+        return out
+
+    meshes = comp.meshBodies
+    n_before = meshes.count
+    counts = {'fin': 0, 'pad': 0}
+    for b in meshes:
+        if is_fin(b):
+            kind = 'pad' if b.name.startswith('Bed pad') else 'fin'
+            counts[kind] += 1
+
+    returned = []
+    parametric = design.designType == adsk.fusion.DesignTypes.ParametricDesignType
+    bf = comp.features.baseFeatures.add() if parametric else None
+    if bf:
+        bf.startEdit()
+    try:
+        for g in groups:
+            body = meshes.addByTriangleMeshData(local(g.coords), list(g.indices), [], [])
+            if body is None:
+                raise BridgeError('Fusion refused one of the fin meshes (%d triangles).'
+                                  % g.triangle_count)
+            returned.append(body)
+    finally:
+        if bf:
+            bf.finishEdit()
+            bf.name = 'Support fins'
+
+    # After a base feature's edit the references handed out inside it can go stale,
+    # so read the new bodies back: from the base feature first, then from the end of
+    # the component's collection, and only then trust the references we were given.
+    def valid(bodies):
+        try:
+            return all(b is not None and b.isValid for b in bodies)
+        except Exception:
+            return False
+
+    added = []
+    if bf:
+        try:
+            added = [bf.meshBodies.item(i) for i in range(bf.meshBodies.count)]
+        except Exception:
+            added = []
+    if len(added) != len(groups) or not valid(added):
+        added = [meshes.item(i) for i in range(n_before, meshes.count)]
+    if len(added) != len(groups) or not valid(added):
+        added = returned
+    _warn_if_elsewhere(added, comp)
+    info = json.dumps(meta or {})
+    for body, g in zip(added, groups):
+        counts[g.kind] += 1
+        body.name = _group_name(g.kind, counts[g.kind])
+        body.attributes.add(ATTR_GROUP, ATTR_FIN, info)
     return added

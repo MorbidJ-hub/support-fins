@@ -54,6 +54,8 @@ VERSION = _version()
 def start(app, ui):
     global _app, _ui
     _app, _ui = app, ui
+    # the small build fetches its JS runtime once; start now, not at first click
+    engine_host.prefetch()
     defs = ui.commandDefinitions
     cmd_def = defs.itemById(CMD_ID)
     if cmd_def:

@@ -17,7 +17,8 @@ MorbidJ-hub. Two commands under **Solid › Create**:
 
 ## Install
 
-**From a build (easiest, Windows).** Download `SupportFins-win_amd64.zip` from the
+**From a build (easiest, Windows).** Download `SupportFins.zip` (about 100 KB) or
+`SupportFins-win_amd64.zip` (about 16 MB) from the
 [`plugins-latest`](https://github.com/gittrahan/support-fins/releases/tag/plugins-latest)
 release, or build it (`python3 plugins/fusion/build.py`). Unzip it so the `SupportFins`
 folder sits in Fusion's add-ins folder:
@@ -25,8 +26,12 @@ folder sits in Fusion's add-ins folder:
 - Windows: `%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\`
 - macOS: `~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/`
 
-Then go to step 2 below. The zip carries mini-racer (the V8 runtime Insert Support Fins needs),
-because Fusion's Python has no pip.
+Then go to step 2 below. Insert Support Fins needs mini-racer (a V8 JavaScript runtime), and
+Fusion's Python has no pip:
+- **`SupportFins-win_amd64.zip` carries it**, so it works offline.
+- **`SupportFins.zip` fetches it once on first run** (about 15 MB from PyPI, in the background
+  while Fusion starts). The download is pinned by SHA-256 to the exact wheel (`RUNTIME` in
+  `engine_host.py`), and nothing else is unpacked. Build it with `build.py --slim`.
 
 **macOS** isn't released yet: nobody has run the add-in in Fusion on a Mac. The builds exist
 (`python3 plugins/fusion/build.py --platform macosx_arm64` for Apple silicon,

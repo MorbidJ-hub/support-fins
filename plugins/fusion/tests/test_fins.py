@@ -132,6 +132,54 @@ class EngineHost(unittest.TestCase):
             engine_host.compute_fins([])
 
 
+class RuntimeFetch(unittest.TestCase):
+    """The small build fetches mini-racer on first run: pinned, checked, atomic."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.saved = (engine_host.LIB, dict(engine_host.RUNTIME))
+        engine_host.LIB = os.path.join(self.tmp, 'lib')
+        wheels = [os.path.join(d, f) for d in (os.environ.get('SF_WHEEL_DIR', ''),)
+                  if d and os.path.isdir(d) for f in os.listdir(d) if f.endswith('.whl')]
+        if not wheels:
+            self.skipTest('set SF_WHEEL_DIR to a folder holding a mini-racer wheel')
+        self.wheel = wheels[0]
+        import hashlib
+        with open(self.wheel, 'rb') as fh:
+            self.sha = hashlib.sha256(fh.read()).hexdigest()
+
+    def tearDown(self):
+        import shutil
+        engine_host.LIB, rt = self.saved
+        engine_host.RUNTIME.clear()
+        engine_host.RUNTIME.update(rt)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def url(self):
+        import pathlib
+        return pathlib.Path(self.wheel).resolve().as_uri()
+
+    def test_fetch_unpacks_only_py_mini_racer(self):
+        engine_host.RUNTIME['test'] = (self.url(), self.sha)
+        engine_host.fetch_runtime('test')
+        self.assertTrue(engine_host.runtime_present('test'))
+        self.assertEqual(os.listdir(os.path.join(engine_host.LIB, 'test')), ['py_mini_racer'])
+        engine_host.fetch_runtime('test')                  # second call: a no-op
+
+    def test_a_bad_checksum_is_refused_and_leaves_nothing(self):
+        engine_host.RUNTIME['test'] = (self.url(), '0' * 64)
+        with self.assertRaises(engine_host.EngineError):
+            engine_host.fetch_runtime('test')
+        self.assertFalse(engine_host.runtime_present('test'))
+
+    def test_pins_cover_every_released_platform(self):
+        for tag in ('win_amd64', 'macosx_arm64', 'macosx_x86_64'):
+            url, sha = self.saved[1][tag]
+            self.assertTrue(url.startswith('https://files.pythonhosted.org/'), tag)
+            self.assertIn(engine_host.MINI_RACER, url)
+            self.assertEqual(len(sha), 64)
+
+
 class HostPlumbing(unittest.TestCase):
     def test_platform_tag_names_a_vendored_folder(self):
         self.assertIn(engine_host.platform_tag(),

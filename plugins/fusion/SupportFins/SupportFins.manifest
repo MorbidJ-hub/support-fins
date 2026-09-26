@@ -6,7 +6,7 @@
 	"description": {
 		"": "printfins.com supports that live in the model. Insert Support Fins: the website's breakaway fins and bed pad under a part's overhangs. Insert Sway Brace: tapered buttress ribs, tied on with one-layer tines, that keep tall parts from swaying as they print."
 	},
-	"version": "0.4.5",
+	"version": "0.4.6",
 	"runOnStartup": false,
 	"supportedOS": "windows|mac",
 	"editEnabled": true

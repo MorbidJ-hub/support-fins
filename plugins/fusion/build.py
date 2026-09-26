@@ -5,6 +5,9 @@
   python3 plugins/fusion/build.py --platform macosx_arm64 --platform macosx_x86_64
                                                   # the macOS zips (not yet tested in Fusion)
   python3 plugins/fusion/build.py --no-vendor     # engine bundle only (dev, tests)
+  python3 plugins/fusion/build.py --slim          # + SupportFins.zip: no runtime inside
+                                                  #   (~100 KB); it fetches mini-racer once
+                                                  #   from PyPI, SHA-256 pinned (engine_host)
   python3 plugins/fusion/build.py --here win_amd64
                                                   # also vendor mini-racer into the source
                                                   # folder, for a linked (junction) install
@@ -101,11 +104,26 @@ def zip_addin(tag):
     return zpath
 
 
+def zip_slim():
+    """The add-in without mini-racer: engine_host fetches the right wheel on first run."""
+    OUT.mkdir(parents=True, exist_ok=True)
+    zpath = OUT / 'SupportFins.zip'
+    with zipfile.ZipFile(zpath, 'w', zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(ADDIN.rglob('*')):
+            rel = f.relative_to(ADDIN)
+            if f.is_dir() or SKIP.intersection(rel.parts):
+                continue
+            z.write(f, pathlib.Path('SupportFins') / rel)
+    return zpath
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--no-vendor', action='store_true', help='bundle the engine only')
     ap.add_argument('--platform', action='append', choices=sorted(PLATFORMS),
                     help='zip this platform (repeatable; default: %s)' % ', '.join(RELEASED))
+    ap.add_argument('--slim', action='store_true',
+                    help='also zip SupportFins.zip without the runtime (fetched on first run)')
     ap.add_argument('--here', choices=sorted(PLATFORMS),
                     help='also unpack mini-racer into SupportFins/lib/<tag> for a linked install')
     args = ap.parse_args()
@@ -115,6 +133,9 @@ def main():
     if args.here:
         unpack_mini_racer(args.here, ADDIN / 'lib')
         print('vendored mini-racer into SupportFins/lib/%s' % args.here)
+    if args.slim:
+        z = zip_slim()
+        print('built %s (%.0f KB)' % (z.relative_to(HERE.parent.parent), z.stat().st_size / 1024))
     if args.no_vendor:
         return
     for tag in args.platform or RELEASED:

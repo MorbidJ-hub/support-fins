@@ -77,11 +77,11 @@ jobs:
       - name: Test
         run: python -m unittest discover -s plugins/fusion/tests -v
       - name: Package (Windows zip, mini-racer vendored; macOS waits for a test in Fusion)
-        run: python plugins/fusion/build.py
+        run: python plugins/fusion/build.py --slim
       - uses: actions/upload-artifact@v4
         with:
           name: fusion
-          path: plugins/fusion/build/SupportFins-*.zip
+          path: plugins/fusion/build/SupportFins*.zip
           if-no-files-found: error
 
   prusa:
@@ -130,7 +130,8 @@ jobs:
           notes="Built automatically from ${GITHUB_SHA::7} on main. Replaced on every push that touches web/ or plugins/.
 
           - support_fins_orca.py: OrcaSlicer plugin (2.5 nightly), experimental
-          - SupportFins-win_amd64.zip: Autodesk Fusion add-in for Windows (Insert Support Fins + Insert Sway Brace), experimental
+          - SupportFins.zip: Autodesk Fusion add-in for Windows, small (fetches its runtime on first run), experimental
+          - SupportFins-win_amd64.zip: the same add-in with the runtime inside (offline), experimental
           - support-fins-prusa.zip: PrusaSlicer 3.0 plugin bundle, placement by hand"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --title "Plugins (latest build)" --notes "$notes" --prerelease

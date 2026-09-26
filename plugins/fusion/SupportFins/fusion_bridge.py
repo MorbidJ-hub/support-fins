@@ -7,6 +7,10 @@ meshes bodies for the maths and turns its prisms back into BRep bodies.
 """
 
 import json
+import os
+import shutil
+import struct
+import tempfile
 
 import adsk.core
 import adsk.fusion
@@ -423,11 +427,74 @@ def _warn_if_elsewhere(bodies, comp):
         pass
 
 
+def _write_stl(path, coords, indices):
+    """A binary STL of one indexed mesh (coordinates as given: component cm)."""
+    n = len(indices) // 3
+    with open(path, 'wb') as fh:
+        fh.write(b'Support Fins'.ljust(80, b'\0'))
+        fh.write(struct.pack('<I', n))
+        for t in range(n):
+            fh.write(b'\0' * 12)                      # normal: the importer works it out
+            for k in indices[3 * t:3 * t + 3]:
+                fh.write(struct.pack('<3f', coords[3 * k], coords[3 * k + 1], coords[3 * k + 2]))
+            fh.write(b'\0\0')
+
+
+def _import_parametric(design, comp, groups, names, local):
+    """STL-import each group into a parametric design, then group the timeline."""
+    meshes = comp.meshBodies
+    cm = adsk.fusion.MeshUnits.CentimeterMeshUnit
+    tl = design.timeline
+    first = tl.count
+    tmp = tempfile.mkdtemp(prefix='supportfins_')
+    bf = None
+    try:
+        for g, name in zip(groups, names):
+            path = os.path.join(tmp, name + '.stl')
+            _write_stl(path, local(g.coords), g.indices)
+            got = None
+            if bf is None:
+                try:
+                    got = meshes.add(path, cm)
+                except Exception:
+                    got = None
+            if not got or got.count == 0:
+                # an older Fusion: meshes only go in through a base feature being edited
+                if bf is None:
+                    bf = comp.features.baseFeatures.add()
+                    bf.startEdit()
+                got = meshes.add(path, cm, bf)
+            if not got or got.count == 0:
+                raise BridgeError('Fusion refused the mesh for %s (%d triangles).'
+                                  % (name, g.triangle_count))
+    finally:
+        if bf is not None:
+            bf.finishEdit()
+            bf.name = 'Support fins'
+        shutil.rmtree(tmp, ignore_errors=True)
+    try:
+        if tl.count - first > 1:
+            tl.timelineGroups.add(first, tl.count - 1).name = 'Support fins'
+        elif tl.count - first == 1 and bf is None:
+            tl.item(first).name = 'Support fins'
+    except Exception:
+        pass        # grouping is cosmetic; the bodies are in
+
+
 def add_fin_bodies(design, groups, frame, meta=None):
     """Put the engine's fins into the 'Supports' component (or, in a Part Design
-    document, the root component) as one mesh body per fin and per bed pad,
-    inside a base feature in a parametric design. The user's bodies are never
-    touched. Returns the new bodies."""
+    document, the root component) as one mesh body per fin and per bed pad. The
+    user's bodies are never touched. Returns the new bodies.
+
+    Parametric designs: each mesh goes in as a binary STL through MeshBodies.add,
+    which Fusion records as its own 'Base Mesh Feature' in the timeline; the new
+    items are then grouped as 'Support fins' so the timeline stays tidy. An
+    imported STL is named after its file, so each temp file carries the body's
+    name. (Seen in Fusion, Sept 2026: addByTriangleMeshData inside a base-feature
+    edit makes bodies that belong to no feature and never show in the browser,
+    and a base feature passed to MeshBodies.add stays empty. Older Fusion builds
+    that insist on the base feature get it as a fallback.)
+    Direct designs: addByTriangleMeshData, no files."""
     if not groups:
         return []
     comp, xf = supports_target(design, create=True)
@@ -445,53 +512,40 @@ def add_fin_bodies(design, groups, frame, meta=None):
         return out
 
     meshes = comp.meshBodies
-    n_before = meshes.count
+    before = set()
     counts = {'fin': 0, 'pad': 0}
     for b in meshes:
+        before.add(b.entityToken)
         if is_fin(b):
-            kind = 'pad' if b.name.startswith('Bed pad') else 'fin'
-            counts[kind] += 1
+            counts['pad' if b.name.startswith('Bed pad') else 'fin'] += 1
+    names = []
+    for g in groups:
+        counts[g.kind] += 1
+        names.append(_group_name(g.kind, counts[g.kind]))
 
     returned = []
-    parametric = design.designType == adsk.fusion.DesignTypes.ParametricDesignType
-    bf = comp.features.baseFeatures.add() if parametric else None
-    if bf:
-        bf.startEdit()
-    try:
-        for g in groups:
+    if design.designType == adsk.fusion.DesignTypes.ParametricDesignType:
+        _import_parametric(design, comp, groups, names, local)
+    else:
+        for g, name in zip(groups, names):
             body = meshes.addByTriangleMeshData(local(g.coords), list(g.indices), [], [])
             if body is None:
-                raise BridgeError('Fusion refused one of the fin meshes (%d triangles).'
-                                  % g.triangle_count)
+                raise BridgeError('Fusion refused the mesh for %s (%d triangles).'
+                                  % (name, g.triangle_count))
             returned.append(body)
-    finally:
-        if bf:
-            bf.finishEdit()
-            bf.name = 'Support fins'
 
-    # After a base feature's edit the references handed out inside it can go stale,
-    # so read the new bodies back: from the base feature first, then from the end of
-    # the component's collection, and only then trust the references we were given.
-    def valid(bodies):
-        try:
-            return all(b is not None and b.isValid for b in bodies)
-        except Exception:
-            return False
-
-    added = []
-    if bf:
-        try:
-            added = [bf.meshBodies.item(i) for i in range(bf.meshBodies.count)]
-        except Exception:
-            added = []
-    if len(added) != len(groups) or not valid(added):
-        added = [meshes.item(i) for i in range(n_before, meshes.count)]
-    if len(added) != len(groups) or not valid(added):
-        added = returned
+    # Read the new bodies back from the component (references handed out inside a
+    # base-feature edit can go stale), matched by name, in the groups' order.
+    fresh = [b for b in meshes if b.entityToken not in before]
+    by_name = {}
+    for b in fresh:
+        by_name.setdefault(b.name, b)
+    added = [by_name.get(n) for n in names]
+    if any(b is None for b in added):
+        added = returned if len(returned) == len(groups) else fresh[:len(groups)]
     _warn_if_elsewhere(added, comp)
     info = json.dumps(meta or {})
-    for body, g in zip(added, groups):
-        counts[g.kind] += 1
-        body.name = _group_name(g.kind, counts[g.kind])
+    for body, name in zip(added, names):
+        body.name = name
         body.attributes.add(ATTR_GROUP, ATTR_FIN, info)
     return added

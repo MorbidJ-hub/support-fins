@@ -150,6 +150,9 @@ class Shells(unittest.TestCase):
         self.assertEqual(kinds, sorted(kinds, key=lambda k: k != 'fin'))   # fins, then pads
         for g in groups:
             self.assertEqual(g.open_edges(), 0, '%s: a %s body is not closed' % (name, g.kind))
+            # Fusion flags a mesh with a flipped triangle 'not oriented'
+            self.assertEqual(g.misoriented_edges(), 0, '%s: a %s body is not oriented' % (name, g.kind))
+            self.assertGreater(shells.signed_volume(g), 0, '%s: a %s body is inside out' % (name, g.kind))
         n_fin = kinds.count('fin')
         self.assertGreaterEqual(n_fin, 1)
         self.assertLessEqual(n_fin, max(1, stats['braces']))   # tines join their wall
@@ -184,6 +187,22 @@ class Welding(unittest.TestCase):
         self.assertEqual(groups[0].open_edges(), 0)
         far = block(0, 1) + block(5, 6)
         self.assertEqual(len(shells.fin_groups(far, len(far) // 9)), 2)
+
+    def test_a_flipped_triangle_is_turned_back_and_the_shell_faces_out(self):
+        v = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)]
+        tet = [v[0], v[2], v[1], v[0], v[1], v[3], v[1], v[2], v[3], v[0], v[3], v[2]]
+        soup = [c for p in tet for c in p]
+        g = shells.weld(soup, range(4), 'pad')
+        self.assertEqual(g.misoriented_edges(), 0)
+        g.indices[3:6] = [g.indices[3], g.indices[5], g.indices[4]]     # flip one face
+        self.assertGreater(g.misoriented_edges(), 0)
+        shells.orient(g)
+        self.assertEqual(g.misoriented_edges(), 0)
+        self.assertGreater(shells.signed_volume(g), 0)
+        g.indices = [i for t in range(4) for i in (g.indices[3 * t], g.indices[3 * t + 2], g.indices[3 * t + 1])]
+        self.assertLess(shells.signed_volume(g), 0)                   # inside out...
+        shells.orient(g)
+        self.assertGreater(shells.signed_volume(g), 0)                # ...turned right way out
 
     def test_slivers_are_dropped(self):
         soup = [0, 0, 0, 1, 0, 0, 1, 0, 0.00001]       # two corners weld to one vertex
@@ -238,12 +257,21 @@ class FusionSide(unittest.TestCase):
         supports = [o.component for o in root.occurrences if o.component.name == 'Supports']
         self.assertEqual(len(supports), 1)
         comp = supports[0]
-        self.assertEqual(len(comp.base_features), 1)
-        self.assertEqual(comp.base_features[0].name, 'Support fins')
+        # each fin is its own Base Mesh Feature, grouped as one 'Support fins' in the
+        # timeline; no empty wrapper base feature is left behind
+        self.assertEqual(comp.base_features, [])
+        groups = design.timeline.timelineGroups
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].name, 'Support fins')
+        self.assertEqual(groups[0].end - groups[0].start + 1, len(added))
         names = [b.name for b in comp.meshBodies]
         self.assertEqual(names[0], 'Support fin 1')
         self.assertIn('Bed pad 1', names)
         self.assertTrue(all(fb.is_fin(b) and fb.is_support(b) for b in comp.meshBodies))
+        # parametric: every body came in through an STL import into the base feature,
+        # and the temp files are gone
+        self.assertEqual(len(comp.meshBodies.imported), len(added))
+        self.assertFalse(any(os.path.exists(pth) for pth in comp.meshBodies.imported))
         # centimetres, under the part, standing on the bed
         allc = [c for b in comp.meshBodies for c in b.coords]
         lo, hi = bbox(allc), bbox([c / 10.0 for c in part])

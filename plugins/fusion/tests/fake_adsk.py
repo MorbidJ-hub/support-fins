@@ -160,17 +160,43 @@ class MeshBodies(Collection):
         super().__init__()
         self.comp = comp
         self.editing = None       # the base feature being edited, in a parametric design
+        self.imported = []        # STL paths imported with add()
+
+    def add(self, path, units, base_feature=None):
+        """Import a binary STL, as current Fusion does it: the body is named after
+        the file, and in a parametric design each import is its own 'Base Mesh
+        Feature' in the timeline (a base feature passed in is left empty)."""
+        import os
+        import struct
+        if base_feature is not None and self.editing is not base_feature:
+            raise RuntimeError('a base feature passed in must be in edit')
+        assert units == MeshUnits.CentimeterMeshUnit
+        with open(path, 'rb') as fh:
+            data = fh.read()
+        n = struct.unpack_from('<I', data, 80)[0]
+        assert len(data) == 84 + 50 * n, 'binary STL expected'
+        coords = []
+        for t in range(n):
+            coords += struct.unpack_from('<9f', data, 84 + 50 * t + 12)
+        name = os.path.splitext(os.path.basename(path))[0]
+        b = MeshBody(coords, None, name, self.comp)
+        self.append(b)
+        self.imported.append(path)
+        if self.comp.design.designType == DesignTypes.ParametricDesignType:
+            tl = self.comp.design.timeline
+            tl.append(TimelineItem('Base Mesh Feature%d' % (len(tl) + 1)))
+        return Collection([b])
 
     def addByTriangleMeshData(self, coords, indices, normals, normal_indices):
-        if self.comp.design.designType == DesignTypes.ParametricDesignType and not self.editing:
-            raise RuntimeError('parametric design: add mesh bodies inside a base feature edit')
+        if self.comp.design.designType == DesignTypes.ParametricDesignType:
+            # real Fusion accepts this but the body belongs to no feature and the
+            # browser never lists it: the add-in must not use it in parametric designs
+            raise RuntimeError('addByTriangleMeshData in a parametric design')
         assert normals == [] and normal_indices == []
         assert len(coords) % 3 == 0 and len(indices) % 3 == 0
         assert max(indices) < len(coords) // 3
         b = MeshBody(coords, indices, 'Body%d' % (len(self) + 1), self.comp)
         self.append(b)
-        if self.editing:
-            self.editing.meshBodies.append(b)
         return b
 
 
@@ -228,6 +254,34 @@ class Occurrences(Collection):
         return occ
 
 
+class MeshUnits:
+    CentimeterMeshUnit = 0
+    MillimeterMeshUnit = 1
+
+
+class TimelineItem:
+    def __init__(self, name):
+        self.name = name
+
+
+class TimelineGroups(Collection):
+    def __init__(self, timeline):
+        super().__init__()
+        self.timeline = timeline
+
+    def add(self, start, end):
+        assert 0 <= start < end < len(self.timeline), (start, end, len(self.timeline))
+        g = types.SimpleNamespace(name='Group', start=start, end=end)
+        self.append(g)
+        return g
+
+
+class Timeline(Collection):
+    def __init__(self):
+        super().__init__()
+        self.timelineGroups = TimelineGroups(self)
+
+
 class DesignTypes:
     DirectDesignType = 0
     ParametricDesignType = 1
@@ -236,6 +290,7 @@ class DesignTypes:
 class Design(_Castable):
     def __init__(self, parametric=True):
         self.designType = DesignTypes.ParametricDesignType if parametric else DesignTypes.DirectDesignType
+        self.timeline = Timeline()
         self.rootComponent = Component(self, 'Root')
 
 
@@ -305,6 +360,7 @@ def install(up='Z'):
     fusion.BRepFace = BRepFace
     fusion.ConstructionPlane = ConstructionPlane
     fusion.DesignTypes = DesignTypes
+    fusion.MeshUnits = MeshUnits
     fusion.TemporaryBRepManager = types.SimpleNamespace(get=lambda: None)
     fusion.BooleanTypes = types.SimpleNamespace(DifferenceBooleanType=0, UnionBooleanType=1)
     fusion.PointContainment = types.SimpleNamespace(PointInsidePointContainment=0)

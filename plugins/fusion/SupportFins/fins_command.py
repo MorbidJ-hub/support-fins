@@ -174,7 +174,7 @@ def _sync(inputs):
 def _settings(inputs):
     return {
         'fin_style': _style(inputs),
-        'layer_height': inputs.itemById('layer').value * fb.MM_PER_CM,
+        'layer_height': round(inputs.itemById('layer').value * fb.MM_PER_CM, 4),
         'fin_tines': inputs.itemById('tines').value,
         'fin_tine_density': inputs.itemById('density').valueOne,
         'fin_coverage': inputs.itemById('coverage').valueOne,

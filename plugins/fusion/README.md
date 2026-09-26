@@ -71,8 +71,9 @@ python3 plugins/fusion/build.py --no-vendor --here win_amd64   # or macosx_arm64
 4. The readout gives the count of fins and tines, whether there's a bed pad, and a rough weight.
    The preview shows the fins live. Click **Insert** to keep them.
 
-The fins go into the **Supports** component (inside a *Support fins* base feature in a
-parametric design) as **mesh bodies**: one per fin (its wall and the tines that ride on it) and
+The fins go into the **Supports** component (in a Part Design document, beside the part in
+its one component) as **mesh bodies**. In a parametric design each one is its own
+*Base Mesh Feature*, grouped as **Support fins** in the timeline. They are one per fin (its wall and the tines that ride on it) and
 one per bed pad, named *Support fin N* and *Bed pad N*. Delete any fin you don't want. Your own
 bodies are never changed. Export the part and the Supports bodies together (STL/3MF); the tines
 overlap the part by the bite on purpose, and the slicer merges them.
@@ -167,10 +168,15 @@ you can tell which build Fusion loaded (Stop/Run reloads the add-in's modules).
   Fusion API a tilted mesh part gets named, tagged fins in Supports (base feature in parametric,
   none in direct), Y-up "stand as modelled" works, and a part through the bed is refused.
 - The vendored runtime loads from `lib/<platform>/` in a Python with no mini-racer installed.
-- **Not yet run inside real Fusion.** To confirm there: mini-racer loading in Fusion's Python
-  (Windows first, then macOS with `--jitless`), `MeshBodies.addByTriangleMeshData` inside a base
-  feature, preview speed on big parts (the bed pad can be ~30k triangles), and a print of the
-  exported part + fins.
+- **Run in Fusion on Windows (Sept 2026, Python 3.14):** the vendored mini-racer loads, and a
+  tilted L-bracket mesh in a Part Design gets the same 4 fins / 20 tines / bed pad as the
+  website, with a live preview. Every body is closed and oriented, named, tagged, and listed in
+  the browser. Two Fusion findings are built in: `addByTriangleMeshData` inside a base feature
+  makes bodies no feature owns (the browser never lists them), so parametric designs import
+  STLs instead; and the engine's bed pad has ~4% of its triangles flipped, so every shell is
+  re-wound before it goes in.
+- Still to confirm: macOS (`--jitless`), assemblies (a real Supports sub-component), a solid
+  (BRep) part, preview speed on big parts, and a print of the exported part + fins.
 
 ### Insert Sway Brace
 

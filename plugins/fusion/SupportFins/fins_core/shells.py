@@ -34,6 +34,17 @@ class Group:
         return (min(c[0::3]), min(c[1::3]), min(c[2::3]),
                 max(c[0::3]), max(c[1::3]), max(c[2::3]))
 
+    def misoriented_edges(self):
+        """Edges two triangles walk the SAME way: a flipped neighbour. 0 when every
+        shell is consistently wound (Fusion flags anything else as 'not oriented')."""
+        seen = {}
+        idx = self.indices
+        for t in range(0, len(idx), 3):
+            a, b, c = idx[t], idx[t + 1], idx[t + 2]
+            for e in ((a, b), (b, c), (c, a)):
+                seen[e] = seen.get(e, 0) + 1
+        return sum(1 for n in seen.values() if n > 1)
+
     def open_edges(self):
         """Edges used by one triangle only: 0 for a closed mesh (each shell is)."""
         count = {}
@@ -135,6 +146,68 @@ def weld(soup, tris, kind):
     return Group(coords, indices, kind)
 
 
+def orient(group):
+    """Wind every closed shell of `group` consistently and outward, in place.
+
+    The engine's bed pad comes out with some triangles flipped (every edge is shared
+    by two triangles, but ~4% of neighbours walk their shared edge the same way).
+    Slicers shrug that off; Fusion marks the mesh 'not oriented, no positive volume'.
+    Walk each shell from one triangle, flipping any neighbour that disagrees, then
+    flip the whole shell if it encloses negative volume. Edges shared by more than
+    two triangles are left alone (no consistent answer exists there)."""
+    idx = group.indices
+    c = group.coords
+    n = len(idx) // 3
+    by_edge = {}
+    for t in range(n):
+        for k in range(3):
+            a, b = idx[3 * t + k], idx[3 * t + (k + 1) % 3]
+            by_edge.setdefault((a, b) if a < b else (b, a), []).append(t)
+
+    def walks(t, a, b):
+        """Does triangle t walk the edge a -> b (rather than b -> a)?"""
+        for k in range(3):
+            if idx[3 * t + k] == a and idx[3 * t + (k + 1) % 3] == b:
+                return True
+        return False
+
+    def flip(t):
+        idx[3 * t + 1], idx[3 * t + 2] = idx[3 * t + 2], idx[3 * t + 1]
+
+    done = [False] * n
+    for seed in range(n):
+        if done[seed]:
+            continue
+        done[seed] = True
+        shell, stack = [seed], [seed]
+        while stack:
+            t = stack.pop()
+            for k in range(3):
+                a, b = idx[3 * t + k], idx[3 * t + (k + 1) % 3]
+                tris = by_edge[(a, b) if a < b else (b, a)]
+                if len(tris) != 2:
+                    continue
+                u = tris[0] if tris[1] == t else tris[1]
+                if done[u]:
+                    continue
+                if walks(u, a, b):          # same direction as t: u is flipped
+                    flip(u)
+                done[u] = True
+                shell.append(u)
+                stack.append(u)
+        vol = 0.0
+        for t in shell:
+            i, j, k = idx[3 * t], idx[3 * t + 1], idx[3 * t + 2]
+            ax, ay, az = c[3 * i], c[3 * i + 1], c[3 * i + 2]
+            bx, by, bz = c[3 * j], c[3 * j + 1], c[3 * j + 2]
+            cx, cy, cz = c[3 * k], c[3 * k + 1], c[3 * k + 2]
+            vol += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx)
+        if vol < 0:
+            for t in shell:
+                flip(t)
+    return group
+
+
 def fin_groups(fins, fin_triangles):
     """The engine's output as bodies: fins first (grouped wall + tines), then pads.
 
@@ -152,7 +225,20 @@ def fin_groups(fins, fin_triangles):
         for g in group_shells(part, split_shells(part)):
             w = weld(part, g, kind)
             if w.indices:
-                out.append(w)
+                out.append(orient(w))
     # left to right, then front to back: a stable order for the names
     out.sort(key=lambda g: (g.kind != 'fin', round(g.bbox()[0], 1), round(g.bbox()[1], 1)))
     return out
+
+
+def signed_volume(group):
+    """Volume enclosed by the group's triangles (positive when wound outward)."""
+    c, idx = group.coords, group.indices
+    vol = 0.0
+    for t in range(0, len(idx), 3):
+        i, j, k = idx[t], idx[t + 1], idx[t + 2]
+        ax, ay, az = c[3 * i], c[3 * i + 1], c[3 * i + 2]
+        bx, by, bz = c[3 * j], c[3 * j + 1], c[3 * j + 2]
+        cx, cy, cz = c[3 * k], c[3 * k + 1], c[3 * k + 2]
+        vol += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx)
+    return vol / 6.0

@@ -104,6 +104,19 @@ def _engine():
     return _ctx
 
 
+def reset():
+    """Drop this module's V8 context; the next call starts a new one."""
+    global _ctx
+    ctx, _ctx = _ctx, None
+    if ctx is not None:
+        try:
+            ctx.close()
+        except Exception:
+            pass
+    if getattr(sys, '_support_fins_v8', None) is ctx:
+        sys._support_fins_v8 = None
+
+
 def available():
     """(True, None) if the engine can run here, else (False, why)."""
     try:
@@ -134,14 +147,23 @@ def compute_fins(soup, options=None):
         data.byteswap()
     opts = dict(DEFAULTS)
     opts.update({k: v for k, v in (options or {}).items() if k in DEFAULTS})
-    try:
-        raw = _engine().call('SupportFinsEngine.computeFinsB64',
-                             base64.b64encode(data.tobytes()).decode('ascii'),
-                             json.dumps(opts), timeout_sec=TIMEOUT_S)
-    except EngineError:
-        raise
-    except Exception as e:
-        raise EngineError('The fin engine failed on this part: %s' % e)
+    payload = (base64.b64encode(data.tobytes()).decode('ascii'), json.dumps(opts))
+    raw = None
+    for attempt in (1, 2):
+        try:
+            raw = _engine().call('SupportFinsEngine.computeFinsB64', *payload,
+                                 timeout_sec=TIMEOUT_S)
+            break
+        except EngineError:
+            raise
+        except Exception as e:
+            # A context that was closed under us (another copy of this module
+            # reloaded, as Fusion's Stop/Run does) fails every call: start a fresh
+            # one and try once more before giving up.
+            reset()
+            if attempt == 2:
+                raise EngineError('The fin engine failed on this part (%s: %s).'
+                                  % (type(e).__name__, e or 'no message'))
     out = json.loads(raw)
     seated = array('f')
     seated.frombytes(base64.b64decode(out['triangles']))

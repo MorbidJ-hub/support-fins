@@ -9,7 +9,8 @@ name: plugins
 #   push to main:  build + test, then publish the builds to the rolling
 #                  `plugins-latest` pre-release (the site's future download links)
 #
-# Fusion zips carry mini-racer per platform (Fusion's Python has no pip).
+# The Fusion zip carries mini-racer (Fusion's Python has no pip). Windows only for
+# now: macOS builds (build.py --platform macosx_*) wait for a test in Fusion there.
 #
 # Not here: the shared engine's Deno tests (plugins/shared/tests) already run in
 # test.yml. Onshape is published from its Onshape document, so there is nothing
@@ -75,7 +76,7 @@ jobs:
         run: python plugins/fusion/build.py --no-vendor
       - name: Test
         run: python -m unittest discover -s plugins/fusion/tests -v
-      - name: Package (one zip per platform, mini-racer vendored)
+      - name: Package (Windows zip, mini-racer vendored; macOS waits for a test in Fusion)
         run: python plugins/fusion/build.py
       - uses: actions/upload-artifact@v4
         with:
@@ -129,7 +130,7 @@ jobs:
           notes="Built automatically from ${GITHUB_SHA::7} on main. Replaced on every push that touches web/ or plugins/.
 
           - support_fins_orca.py: OrcaSlicer plugin (2.5 nightly), experimental
-          - SupportFins-<platform>.zip: Autodesk Fusion add-in (Insert Support Fins + Insert Sway Brace), experimental
+          - SupportFins-win_amd64.zip: Autodesk Fusion add-in for Windows (Insert Support Fins + Insert Sway Brace), experimental
           - support-fins-prusa.zip: PrusaSlicer 3.0 plugin bundle, placement by hand"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --title "Plugins (latest build)" --notes "$notes" --prerelease

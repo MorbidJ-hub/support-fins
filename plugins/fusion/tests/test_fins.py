@@ -118,6 +118,15 @@ class EngineHost(unittest.TestCase):
         self.assertEqual(len(fins), 0)
         self.assertEqual(stats['overhangRegions'], 0)
 
+    def test_a_context_closed_under_the_host_is_replaced(self):
+        # Fusion's Stop/Run (or a second copy of the module) can close the V8
+        # context the host holds; the next run must start a new one, not fail
+        part = posed(read_stl('lbracket'), 35)
+        _, before = engine_host.compute_fins(part)
+        engine_host._engine().close()
+        _, after = engine_host.compute_fins(part)
+        self.assertEqual(before, after)
+
     def test_empty_soup_is_refused_in_words(self):
         with self.assertRaises(engine_host.EngineError):
             engine_host.compute_fins([])

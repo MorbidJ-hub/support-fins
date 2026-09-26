@@ -17,8 +17,7 @@ MorbidJ-hub. Two commands under **Solid › Create**:
 
 ## Install
 
-**From a build (easiest).** Download `SupportFins-<platform>.zip` (`win_amd64`,
-`macosx_arm64` for Apple silicon, `macosx_x86_64` for Intel Macs) from the
+**From a build (easiest, Windows).** Download `SupportFins-win_amd64.zip` from the
 [`plugins-latest`](https://github.com/gittrahan/support-fins/releases/tag/plugins-latest)
 release, or build it (`python3 plugins/fusion/build.py`). Unzip it so the `SupportFins`
 folder sits in Fusion's add-ins folder:
@@ -26,8 +25,12 @@ folder sits in Fusion's add-ins folder:
 - Windows: `%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\`
 - macOS: `~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/`
 
-Then go to step 2 below. The zip carries mini-racer (the V8 runtime Insert Support Fins needs)
-for that platform, because Fusion's Python has no pip.
+Then go to step 2 below. The zip carries mini-racer (the V8 runtime Insert Support Fins needs),
+because Fusion's Python has no pip.
+
+**macOS** isn't released yet: nobody has run the add-in in Fusion on a Mac. The builds exist
+(`python3 plugins/fusion/build.py --platform macosx_arm64` for Apple silicon,
+`--platform macosx_x86_64` for Intel); if you try one, please report back.
 
 **From the repo (to develop).** Build the engine bundle and vendor the runtime into the source
 folder first, then link it:
@@ -175,8 +178,17 @@ you can tell which build Fusion loaded (Stop/Run reloads the add-in's modules).
   makes bodies no feature owns (the browser never lists them), so parametric designs import
   STLs instead; and the engine's bed pad has ~4% of its triangles flipped, so every shell is
   re-wound before it goes in.
-- Still to confirm: macOS (`--jitless`), assemblies (a real Supports sub-component), a solid
-  (BRep) part, preview speed on big parts, and a print of the exported part + fins.
+- **Harder runs in Fusion on Windows:**
+  - 3DBenchy (225k triangles, public domain) laid on its side, in a Hybrid design: 5 fins,
+    10 tines and a bed pad land in a real *Supports* sub-component. Reading the mesh, running
+    the engine and reshaping take 3.2 s together (0.5 + 2.5 + 0.2).
+  - A tilted solid (BRep) T-bracket with a horizontal hole and a boss under the arm, meshed
+    by the add-in: 4 fins and a bed pad, including walls that stand on the part's own foot.
+  - Insert Sway Brace still runs beside it and ignores the fin bodies.
+- The engine decides what gets fins, as on the website: on Benchy it leaves 12 of 16 small
+  overhang regions unsupported, and the T-bracket's walls get no tines at the defaults.
+- Still to confirm: macOS (`--jitless`, so no macOS build is released yet) and a print of an
+  exported part + fins.
 
 ### Insert Sway Brace
 

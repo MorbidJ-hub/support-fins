@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Build the Fusion add-in.
 
-  python3 plugins/fusion/build.py                 # engine bundle + one zip per platform
+  python3 plugins/fusion/build.py                 # engine bundle + the Windows zip
+  python3 plugins/fusion/build.py --platform macosx_arm64 --platform macosx_x86_64
+                                                  # the macOS zips (not yet tested in Fusion)
   python3 plugins/fusion/build.py --no-vendor     # engine bundle only (dev, tests)
   python3 plugins/fusion/build.py --here win_amd64
                                                   # also vendor mini-racer into the source
@@ -13,9 +15,10 @@
    each platform is downloaded (pip download) and its py_mini_racer package is
    unpacked into lib/<platform>/. mini-racer wheels are py3-none, so they don't
    care which Python Fusion ships.
-3. Zips SupportFins/ once per platform into plugins/fusion/build/:
-       SupportFins-win_amd64.zip  SupportFins-macosx_arm64.zip  SupportFins-macosx_x86_64.zip
-   Unzip into Fusion's AddIns folder and Run.
+3. Zips SupportFins/ per platform into plugins/fusion/build/, e.g.
+   SupportFins-win_amd64.zip. Unzip into Fusion's AddIns folder and Run.
+   Only Windows is built by default: it is the platform the add-in has been run
+   on in Fusion. The macOS builds exist but ship once someone tests them there.
 
 Needs esbuild (see plugins/shared/bundle.py) and, unless --no-vendor, pip and network.
 """
@@ -38,6 +41,7 @@ PLATFORMS = {                        # lib/<tag> -> pip --platform
     'macosx_arm64': 'macosx_11_0_arm64',
     'macosx_x86_64': 'macosx_10_9_x86_64',
 }
+RELEASED = ['win_amd64']            # built by default (and by CI); the rest on request
 SKIP = {'__pycache__', 'settings.json', '.env', '.vscode', 'lib', '.DS_Store'}
 
 sys.path.insert(0, str(HERE.parent / 'shared'))
@@ -101,7 +105,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--no-vendor', action='store_true', help='bundle the engine only')
     ap.add_argument('--platform', action='append', choices=sorted(PLATFORMS),
-                    help='zip only this platform (repeatable; default: all)')
+                    help='zip this platform (repeatable; default: %s)' % ', '.join(RELEASED))
     ap.add_argument('--here', choices=sorted(PLATFORMS),
                     help='also unpack mini-racer into SupportFins/lib/<tag> for a linked install')
     args = ap.parse_args()
@@ -113,7 +117,7 @@ def main():
         print('vendored mini-racer into SupportFins/lib/%s' % args.here)
     if args.no_vendor:
         return
-    for tag in args.platform or sorted(PLATFORMS):
+    for tag in args.platform or RELEASED:
         z = zip_addin(tag)
         print('built %s (%.1f MB)' % (z.relative_to(HERE.parent.parent), z.stat().st_size / 1e6))
 

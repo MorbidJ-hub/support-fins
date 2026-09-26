@@ -378,6 +378,17 @@ def _do_compute(inputs, s):
     lines.append('%d overhang region%s, %d triangles.' % (
         stats.get('overhangRegions', 0), '' if stats.get('overhangRegions') == 1 else 's',
         sum(g.triangle_count for g in groups)))
+    pieces = _loose_pieces(body)
+    if pieces > 1 or stats.get('floating'):
+        # A piece not joined to the rest (a hole wider than the wall it cuts, a
+        # stray body) stands on its supports alone: almost always a modelling
+        # slip. Must-see, so it goes right under the headline.
+        lines.insert(1, '<b>Check the model:</b> %s of it %s joined to the rest%s. A hole or cut '
+                        'may go right through.'
+                     % ('%d pieces' % pieces if pieces > 1 else 'a piece',
+                        'aren’t' if pieces > 1 else 'isn’t',
+                        ', so it starts %.1f mm up, held only by supports' % stats['floatingDrop']
+                        if stats.get('floating') else ''))
     if stats.get('unserved'):
         lines.append('%d overhang region%s left unsupported (too small or unreachable).'
                      % (stats['unserved'], '' if stats['unserved'] == 1 else 's'))
@@ -385,6 +396,16 @@ def _do_compute(inputs, s):
     meta = {'layer': s['layer_height'], 'style': s['fin_style'], 'engine': 'printfins.com',
             'addin': VERSION}
     return _result(lines, groups, frame, meta)
+
+
+def _loose_pieces(body):
+    """How many separate solids a BRep body holds (its lumps); 1 for a mesh body,
+    whose loose pieces the engine reports instead (stats['floating'])."""
+    try:
+        lumps = adsk.fusion.BRepBody.cast(body)
+        return lumps.lumps.count if lumps else 1
+    except Exception:
+        return 1
 
 
 def _volume_mm3(soup):

@@ -335,6 +335,30 @@ class FusionSide(unittest.TestCase):
         res = fins_command._compute(dialog(design.rootComponent.xYConstructionPlane))
         self.assertTrue(any('floats 4.0 mm' in l for l in res['plain']))
 
+    def test_a_piece_not_joined_to_the_rest_is_flagged(self):
+        # engines with floatingPieces report it in stats; the readout must say so
+        design, _ = mesh_design(posed(read_stl('lbracket'), 35))
+        real = engine_host.compute_fins
+
+        def with_floating(soup, options=None):
+            fins, st = real(soup, options)
+            return fins, dict(st, floating=1, floatingDrop=4.25)
+        engine_host.compute_fins = with_floating
+        try:
+            res = fins_command._compute(dialog(design.rootComponent.xYConstructionPlane))
+        finally:
+            engine_host.compute_fins = real
+        self.assertIn('Check the model', res['plain'][1])
+        self.assertIn('4.2 mm up', res['plain'][1])
+
+    def test_a_bRep_body_in_two_lumps_counts_as_loose_pieces(self):
+        class Lumps:
+            count = 2
+        class Body(fake_adsk.BRepBody):
+            lumps = Lumps()
+        self.assertEqual(fins_command._loose_pieces(Body()), 2)
+        self.assertEqual(fins_command._loose_pieces(fake_adsk.MeshBody([0, 0, 0, 1, 0, 0, 0, 1, 0], None)), 1)
+
     def test_preview_result_carries_the_metadata(self):
         # the preview is kept as the result (execute never runs), so it must tag the bodies
         import json

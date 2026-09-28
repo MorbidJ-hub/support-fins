@@ -16,3 +16,9 @@ plugins/orca/build/
 # example models: Thingi10K ones keep third-party licenses, so they're fetched
 # locally (fetch_thingi.py), never committed
 prototype/examples/real/
+# Fusion add-in: its saved settings, VS Code files and the built engine bundle are per machine
+plugins/fusion/SupportFins/settings.json
+plugins/fusion/SupportFins/.env
+plugins/fusion/SupportFins/.vscode/
+plugins/fusion/SupportFins/palette/fins_engine.js
+plugins/fusion/build/

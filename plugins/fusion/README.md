@@ -18,6 +18,15 @@ ships with the add-in: the same folder works on Windows and macOS.
 
 ## Install
 
+**From a build.** Download `SupportFins.zip` from the
+[`plugins-latest`](https://github.com/gittrahan/support-fins/releases/tag/plugins-latest)
+release (or build it: `python3 plugins/fusion/build.py --zip`) and unzip it so the
+`SupportFins` folder sits in Fusion's add-ins folder:
+
+- Windows: `%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\`
+- macOS: `~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/` (untested
+  so far: please report back)
+
 **From the repo.** Build the engine bundle, then link (or copy) the add-in folder into Fusion's
 add-ins folder:
 
@@ -90,7 +99,8 @@ preview.
 ## Develop
 
 ```
-build.py                    bundles the engine into SupportFins/palette/fins_engine.js
+build.py                    bundles the engine into SupportFins/palette/fins_engine.js;
+                            --zip also writes build/SupportFins.zip
 SupportFins/                the add-in (this folder goes in Fusion's AddIns)
   SupportFins.py            entry point: run/stop
   fins_command.py           Insert Support Fins: dialog, readout and preview

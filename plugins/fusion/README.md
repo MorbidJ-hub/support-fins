@@ -24,8 +24,7 @@ release (or build it: `python3 plugins/fusion/build.py --zip`) and unzip it so t
 `SupportFins` folder sits in Fusion's add-ins folder:
 
 - Windows: `%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\`
-- macOS: `~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/` (untested
-  so far: please report back)
+- macOS: `~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/`
 
 **From the repo.** Build the engine bundle, then link (or copy) the add-in folder into Fusion's
 add-ins folder:
@@ -143,5 +142,6 @@ which build Fusion loaded (Stop/Run reloads the add-in's modules).
   browser as `file:///C:%5CUsers...` and the page never loads.
 - The palette pattern (hidden palette, `fusionSendData`, no Python waits) was proven on macOS
   (Apple silicon, Fusion 2704.1.36) by the engine-test spike on PR #83: exact website fins on
-  the L-bracket at 35° in 52 ms. **This build itself has not been run on a Mac yet.**
+  the L-bracket at 35° in 52 ms. This build (v0.5.0) has since run there too, in Fusion
+  2705.1.25. Intel Macs are untested.
 - Shown, the palette has a status line (ready / jobs run / last error), for debugging.
